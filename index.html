@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Speedometer for Bluefy</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center;
+            background-color: #1c1c1e;
+            color: #ffffff;
+            padding: 20px;
+        }
+        button {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        button:disabled {
+            background-color: #3a3a3c;
+            color: #aeaeae;
+        }
+        #status {
+            margin: 20px 0;
+            color: #ecc94b;
+        }
+        /* Для Bluefy відео МАЄ бути видимим на сторінці */
+        #video-container {
+            margin-top: 20px;
+        }
+        video {
+            width: 280px;
+            height: 180px;
+            background: #000;
+            border-radius: 8px;
+        }
+        canvas {
+            display: none; /* Канвас залишаємо схованиим */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>GPS у PiP (Bluefy)</h1>
+    
+    <div id="status">Очікування GPS...</div>
+    <button id="pipBtn" disabled>Запустити через JS</button>
+
+    <div id="video-container">
+        <!-- Атрибут controls критично важливий для Bluefy! -->
+        <video id="video" autoplay playsinline muted controls></video>
+    </div>
+
+    <canvas id="canvas" width="300" height="200"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const pipBtn = document.getElementById('pipBtn');
+        const statusDiv = document.getElementById('status');
+
+        let currentSpeed = 0;
+
+        function drawSpeed() {
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#34c759'; 
+            ctx.font = 'bold 70px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(currentSpeed, canvas.width / 2, canvas.height / 2 - 10);
+
+            ctx.fillStyle = '#aeaeae';
+            ctx.font = '20px -apple-system, sans-serif';
+            ctx.fillText('км/год', canvas.width / 2, canvas.height / 2 + 50);
+
+            requestAnimationFrame(drawSpeed);
+        }
+
+        function initStream() {
+            drawSpeed();
+            const stream = canvas.captureStream(30);
+            video.srcObject = stream;
+            
+            pipBtn.removeAttribute('disabled');
+            statusDiv.innerText = "Потік готовий! Якщо кнопка не спрацює, натисніть іконку PiP прямо на плеєрі відео.";
+        }
+
+        if ('geolocation' in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    if (position.coords.speed !== null && position.coords.speed !== undefined) {
+                        currentSpeed = Math.round(position.coords.speed * 3.6);
+                    } else {
+                        currentSpeed = 0;
+                    }
+                    if (pipBtn.hasAttribute('disabled')) {
+                        initStream();
+                    }
+                },
+                (error) => {
+                    statusDiv.innerText = `Помилка: ${error.message}`;
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
+
+        // Альтернативний запуск для iOS сторінок
+        pipBtn.addEventListener('click', async () => {
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                } else if (video.webkitSetPresentationMode) {
+                    video.webkitSetPresentationMode("picture-in-picture");
+                } else if (document.pictureInPictureEnabled) {
+                    await video.requestPictureInPicture();
+                } else {
+                    // Якщо JS заблоковано, користувач має натиснути на іконку в самому плеєрі
+                    alert("JS-запуск заблоковано оболонкою Bluefy. Використовуйте стандартну кнопку PiP на самому відео (снизу праворуч).");
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    </script>
+</body>
+</html>
