@@ -468,6 +468,56 @@ if(!needsMotionPermission()){
   startMotionSensors();
 }
 
+/* ── ДЕТЕКТОР ПАДІННЯ (поки тільки СПОСТЕРЕЖЕННЯ, без сирени/SMS) ──
+   Це навмисно найпростіший можливий крок: просто показуємо toast + пишемо
+   в консоль, коли тригер спрацював, щоб ти міг покататись і подивитись, чи
+   нема хибних спрацювань на реальних вибоїнах/гальмуванні/поворотах,
+   ПЕРЕД тим як додавати сирену/countdown/відправку SMS. Керується тим самим
+   вимикачем AL.Fall_enabled з Налаштування → СИГНАЛИ.
+   Два незалежні тригери (обговорено раніше):
+   1. tipover — кут нахилу тримається >80° довше 3с (повільне перекидання,
+      забута підніжка тощо). НЕ залежить від BLE/RPM навмисно — BLE-модуль
+      може не пережити реальний удар, тому рахуємо лише сенсори телефону.
+   2. gspike — різкий сплеск G-сили (можливий удар). Поріг і час
+      підтвердження ще будуть уточнюватись за результатами тестів. */
+let _leanOverSince = null;
+let _lastTipoverLogTs = 0;
+let _lastGSpikeLogTs = 0;
+const FALL_LEAN_DEG = 80;
+const FALL_LEAN_HOLD_MS = 3000;
+const FALL_GFORCE_THRESHOLD = 2.2;
+const FALL_LOG_COOLDOWN_MS = 8000; // не спамити toast на кожен цикл, поки умова тримається
+
+function logFallEvent(type, detail){
+  const ts = new Date().toLocaleTimeString('uk-UA', {hour12:false});
+  console.log(`[ПАДІННЯ-ТЕСТ] ${ts} ${type}: ${detail}`);
+  sht('⚠️ Тест падіння: ' + detail);
+}
+
+setInterval(()=>{
+  if(!AL.Fall_enabled) { _leanOverSince = null; return; }
+
+  // Тригер 1: тривалий кут нахилу
+  if(typeof V.Lean === 'number'){
+    if(V.Lean > FALL_LEAN_DEG){
+      if(_leanOverSince === null) _leanOverSince = Date.now();
+      else if(Date.now() - _leanOverSince > FALL_LEAN_HOLD_MS && Date.now() - _lastTipoverLogTs > FALL_LOG_COOLDOWN_MS){
+        logFallEvent('tipover', `кут ${V.Lean}° тримається понад 3с`);
+        _lastTipoverLogTs = Date.now();
+      }
+    } else {
+      _leanOverSince = null;
+    }
+  }
+
+  // Тригер 2: сплеск G-сили
+  const g = parseFloat(V.Gforce);
+  if(!isNaN(g) && g > FALL_GFORCE_THRESHOLD && Date.now() - _lastGSpikeLogTs > FALL_LOG_COOLDOWN_MS){
+    logFallEvent('gspike', `G-сплеск ${g}G`);
+    _lastGSpikeLogTs = Date.now();
+  }
+}, 300);
+
 let bDev=null,bChr=null,bConn=false,userDisconnected=false,reconnecting=false;
 const SVC='0000ffe0-0000-1000-8000-00805f9b34fb',CHR='0000ffe1-0000-1000-8000-00805f9b34fb';
 
